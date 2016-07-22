@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.cinchapi.concourse.plugin.http;
+package com.cinchapi.concourse.server.http;
 
 import javax.annotation.Nullable;
 
@@ -22,14 +22,18 @@ import com.cinchapi.concourse.thrift.TransactionToken;
 import com.google.gson.JsonObject;
 
 /**
- * An {@link Endpoint} is an accessible plugin point that contains logic for
- * functionality that can be invoked via HTTP by requesting a specific URI with
- * a specific verb.
- * 
+ * An {@link Endpoint} is the most basic construct in the HTTP framework. An
+ * Endpoint is uniquely identifiable and accessible from a <em<route</em> that
+ * is made up of an HTTP verb/action and a URI.
  * <p>
- * {@link Endpoint Endpoints} should be anonymously defined in an
- * {@link HttpPlugin HttpPlugins} using variable names that conform to the
- * routing spec.
+ * An Endpoint's route can be provided upon
+ * {@link Endpoint#Endpoint(String, String) construction} or it can be inferred
+ * from the name of the instance variable to which the Endpoint is bound in an
+ * {@link EndpointContainer}.
+ * </p>
+ * <p>
+ * When declaring Endpoints anonymously within an {@link EndpointContainer}, be
+ * sure to use variable names that conform to the roting spec.
  * </p>
  * 
  * @author Jeff Nelson

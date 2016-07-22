@@ -1,10 +1,9 @@
 /*
- * Copyright 2011- Per Wendel
+ * Copyright (c) 2013-2016 Cinchapi Inc.
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
  * 
  * http://www.apache.org/licenses/LICENSE-2.0
  * 
@@ -14,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package spark.webserver;
+package com.cinchapi.concourse.server.http.webserver;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -31,22 +30,22 @@ import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.session.SessionHandler;
 
 import com.cinchapi.concourse.server.GlobalState;
+import com.cinchapi.concourse.server.http.HttpAuthToken;
 import com.cinchapi.concourse.server.http.HttpRequests;
-import com.cinchapi.concourse.thrift.AccessToken;
 import com.cinchapi.concourse.util.ObjectUtils;
 import com.cinchapi.concourse.util.Reflection;
-import com.google.common.base.MoreObjects;
+import com.cinchapi.concourse.util.Strings;
 import com.google.common.base.Throwables;
 
-import spark.webserver.JettyHandler;
 import spark.webserver.NotConsumedException;
 
 /**
  * Simple Jetty Handler
  *
  * @author Per Wendel
+ * @author Jeff Nelson
  */
-class JettyHandler extends SessionHandler {
+public class ConcourseHttpHandler extends SessionHandler {
 
     /**
      * Search through the {@code request} for the value of the {@code name}
@@ -86,15 +85,17 @@ class JettyHandler extends SessionHandler {
         if(targetParts.length >= 2) {
             String targetEnv = targetParts[1];
             if(targetEnv.equals("login")) {
-                // Do not rewrite login with no declared environment. Just set
-                // the request attribute to use the DEFAULT ENVIRONMENT
+                // When route is /login, do not rewrite by dropping the declared
+                // environment. Just set the request attribute to use the
+                // DEFAULT ENVIRONMENT
                 targetEnv = GlobalState.DEFAULT_ENVIRONMENT;
                 requireAuth = false;
             }
             else if(targetParts.length >= 3 && targetParts[2].equals("login")) {
-                // Rewrite login with declared environment like we would all
-                // other requests, but tell the request attribute to use the
-                // declared environment instead of the one in the cookie.
+                // When route is /<environment>/login, rewrite without a
+                // declared environment like we would all other requests, but
+                // tell the request attribute to use the declared environment
+                // instead of the one in the cookie.
                 target = target.replaceFirst(targetEnv, "").replaceAll("//",
                         "/");
                 rewrite = true;
@@ -108,26 +109,26 @@ class JettyHandler extends SessionHandler {
                         findCookieValue(GlobalState.HTTP_AUTH_TOKEN_COOKIE,
                                 request), request
                                 .getHeader(GlobalState.HTTP_AUTH_TOKEN_HEADER));
+
                 if(token != null) {
                     try {
-                        Object[] auth = HttpRequests.decodeAuthToken(token);
-                        AccessToken access = (AccessToken) auth[0];
-                        String authEnv = (String) auth[1];
-                        String fingerprint = (String) auth[2];
-                        if(authEnv.equals(targetEnv)) {
+                        HttpAuthToken auth = HttpRequests
+                                .decodeAuthToken(token);
+                        if(auth.getEnvironment().equals(targetEnv)) {
                             target = target.replaceFirst(targetEnv, "")
                                     .replaceAll("//", "/");
                             rewrite = true;
                         }
                         else {
-                            targetEnv = authEnv;
+                            targetEnv = auth.getEnvironment();
                             rewrite = true;
                         }
                         request.setAttribute(
-                                GlobalState.HTTP_ACCESS_TOKEN_ATTRIBUTE, access);
+                                GlobalState.HTTP_ACCESS_TOKEN_ATTRIBUTE,
+                                auth.getAccessToken());
                         request.setAttribute(
                                 GlobalState.HTTP_FINGERPRINT_ATTRIBUTE,
-                                fingerprint);
+                                auth.getFingerprint());
 
                     }
                     catch (Exception e) {
@@ -151,17 +152,20 @@ class JettyHandler extends SessionHandler {
             }
         }
         else {
-            String token = MoreObjects
-                    .firstNonNull(
+            String token = ObjectUtils
+                    .firstNonNullOrNull(
                             findCookieValue(GlobalState.HTTP_AUTH_TOKEN_COOKIE,
                                     request),
                             request.getHeader(GlobalState.HTTP_AUTH_TOKEN_HEADER));
             if(token != null) {
                 try {
-                    Object[] auth = HttpRequests.decodeAuthToken(token);
-                    AccessToken access = (AccessToken) auth[0];
+                    HttpAuthToken auth = HttpRequests.decodeAuthToken(token);
                     request.setAttribute(
-                            GlobalState.HTTP_ACCESS_TOKEN_ATTRIBUTE, access);
+                            GlobalState.HTTP_ACCESS_TOKEN_ATTRIBUTE,
+                            auth.getAccessToken());
+                    request.setAttribute(
+                            GlobalState.HTTP_ENVIRONMENT_ATTRIBUTE,
+                            auth.getEnvironment());
                 }
                 catch (Exception e) {
                     if(e instanceof GeneralSecurityException
@@ -184,9 +188,29 @@ class JettyHandler extends SessionHandler {
                 requireAuth);
     }
 
+    /**
+     * HTTP Access-Control-Allow-Headers header.
+     */
+    private static String HEADER_ACCESS_CONTROL_ALLOW_HEADERS = "Access-Control-Allow-Headers";
+
+    /**
+     * HTTP Access-Control-Allow-Methods header.
+     */
+    private static String HEADER_ACCESS_CONTROL_ALLOW_METHODS = "Access-Control-Allow-Methods";
+
+    /**
+     * HTTP Access-Control-Allow-Origin header.
+     */
+    private static String HEADER_ACCESS_CONTROL_ALLOW_ORIGIN = "Access-Control-Allow-Origin";
+
+    /**
+     * HTTP Vary header.
+     */
+    private static String HEADER_VARY = "Vary";
+
     private Filter filter;
 
-    public JettyHandler(Filter filter) {
+    public ConcourseHttpHandler(Filter filter) {
         this.filter = filter;
     }
 
@@ -196,6 +220,37 @@ class JettyHandler extends SessionHandler {
             throws IOException, ServletException {
         try {
             rewrite(target, baseRequest, request);
+            if(GlobalState.HTTP_ENABLE_CORS) { // CON-475: Support CORS
+                if(GlobalState.HTTP_CORS_DEFAULT_ALLOW_ORIGIN.equals("*")) {
+                    response.addHeader("Access-Control-Allow-Headers", "*");
+                }
+                else {
+                    String requestOrigin = request.getHeader("Origin");
+                    if(Strings.isSubString(requestOrigin,
+                            GlobalState.HTTP_CORS_DEFAULT_ALLOW_ORIGIN)) {
+                        response.addHeader(HEADER_ACCESS_CONTROL_ALLOW_ORIGIN,
+                                requestOrigin);
+                        response.addHeader(HEADER_VARY, requestOrigin);
+                    }
+                }
+                if(GlobalState.HTTP_CORS_DEFAULT_ALLOW_HEADERS.equals("*")) {
+                    response.addHeader(HEADER_ACCESS_CONTROL_ALLOW_HEADERS,
+                            request.getHeader("Access-Control-Request-Headers"));
+                }
+                else {
+                    response.addHeader(HEADER_ACCESS_CONTROL_ALLOW_HEADERS,
+                            GlobalState.HTTP_CORS_DEFAULT_ALLOW_HEADERS);
+                }
+                String requestMethod = request.getMethod();
+                if(GlobalState.HTTP_CORS_DEFAULT_ALLOW_METHODS.equals("*")) {
+                    response.addHeader(HEADER_ACCESS_CONTROL_ALLOW_METHODS,
+                            requestMethod);
+                }
+                else {
+                    response.addHeader(HEADER_ACCESS_CONTROL_ALLOW_METHODS,
+                            GlobalState.HTTP_CORS_DEFAULT_ALLOW_METHODS);
+                }
+            }
             filter.doFilter(request, response, null);
             baseRequest.setHandled(true);
         }
@@ -204,5 +259,4 @@ class JettyHandler extends SessionHandler {
             baseRequest.setHandled(false);
         }
     }
-
 }

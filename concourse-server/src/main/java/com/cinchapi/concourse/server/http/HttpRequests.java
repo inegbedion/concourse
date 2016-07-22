@@ -19,8 +19,6 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.security.GeneralSecurityException;
 
-
-import com.cinchapi.concourse.plugin.http.HttpRequest;
 import com.cinchapi.concourse.security.ClientSecurity;
 import com.cinchapi.concourse.thrift.AccessToken;
 import com.cinchapi.concourse.util.ByteBuffers;
@@ -45,18 +43,14 @@ public class HttpRequests {
      *         the token was encoded with and the third contains the fingerprint
      * @throws GeneralSecurityException
      */
-    public static Object[] decodeAuthToken(String token)
+    public static HttpAuthToken decodeAuthToken(String token)
             throws GeneralSecurityException {
         ByteBuffer cryptPack = ByteBuffer.wrap(BaseEncoding.base64Url().decode(
                 token));
         String pack = ByteBuffers.getString(ClientSecurity.decrypt(cryptPack));
         String[] toks = pack.split("\\|");
-        Object[] parts = new Object[3];
-        parts[0] = new AccessToken(ByteBuffer.wrap(BaseEncoding.base32Hex()
-                .decode(toks[0])));
-        parts[1] = toks[1];
-        parts[2] = toks[2];
-        return parts;
+        return new HttpAuthToken(new AccessToken(ByteBuffer.wrap(BaseEncoding
+                .base32Hex().decode(toks[0]))), toks[1], toks[2]);
 
     }
 
