@@ -13,33 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.cinchapi.concourse.server.plugin;
+package com.cinchapi.concourse.server.plugin.io;
 
-import java.util.Collections;
-import java.util.List;
-
-import com.cinchapi.concourse.server.plugin.io.PluginSerializable;
-import com.cinchapi.concourse.server.plugin.model.WriteEvent;
-import com.google.common.collect.Lists;
+import java.io.Serializable;
 
 /**
- * TODO add some docs
+ * A marker interface for objects that can be serialized and passed between
+ * Concourse and plugin processes.
  * 
  * @author Jeff Nelson
  */
-public class Packet implements PluginSerializable {
-
-    private static final long serialVersionUID = 9214118090555607982L;
-
-    private final List<WriteEvent> data;
-
-    public Packet() {
-        this.data = Lists.newArrayList();
-    }
-
-    public List<WriteEvent> getData() {
-        return Collections.unmodifiableList(data);
-    }
-
-
+public interface PluginSerializable extends Serializable {
+    // TODO (jnelson): In the future, we should use a different library (perhaps
+    // create a custom one) to perform plugin serialization. Built-in java
+    // serialization is incredibly inefficient and we stand to gain reduced
+    // latency and increased performance if we take a more fine grained approach
+    // to serializing data for plugins.
 }
